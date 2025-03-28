@@ -1,6 +1,6 @@
 # OpenHands EC2マネージャー
 
-OpenHandsをEC2上で簡単に立ち上げたり管理するためのWebUIです。
+OpenHandsをEC2上で簡単に立ち上げたり管理するためのWebUIです。GitHub Actionsを使用した自動デプロイパイプラインも備えています。
 
 ## 機能
 
@@ -11,6 +11,7 @@ OpenHandsをEC2上で簡単に立ち上げたり管理するためのWebUIです
 - インスタンスの管理（起動/停止/終了）
 - インスタンスの詳細情報表示
 - OpenHandsへのアクセスリンク
+- GitHub Actionsによる自動CI/CD
 
 ## 技術スタック
 
@@ -79,12 +80,22 @@ npm start
 
 ## 本番環境へのデプロイ
 
-### ビルド手順
+### 自動デプロイ（推奨）
+
+このリポジトリはGitHub Actionsを使用した自動デプロイパイプラインを備えています。詳細は以下のドキュメントを参照してください：
+
+- [GitHub Actions CI/CDセットアップガイド](GITHUB_ACTIONS_SETUP.md)
+- [EC2インスタンスセットアップガイド](EC2_SETUP.md)
+
+### 手動ビルド手順
 
 1. フロントエンドをビルド
 ```bash
 cd client
-npm run build
+npm run build  # 通常のビルド
+npm run build:dev  # 開発環境用ビルド
+npm run build:staging  # テスト環境用ビルド
+npm run build:prod  # 本番環境用ビルド
 ```
 
 2. バックエンドをビルド
@@ -96,7 +107,8 @@ npm run build
 3. 本番環境にデプロイ
 ```bash
 # 本番環境のサーバーにファイルをコピー
-scp -r dist/* user@your-server:/path/to/deployment
+scp -r server/dist/* user@your-server:/path/to/deployment/server/
+scp -r client/build/* user@your-server:/path/to/deployment/client/
 ```
 
 ## 使用方法
