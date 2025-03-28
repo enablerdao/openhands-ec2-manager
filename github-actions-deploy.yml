@@ -1,0 +1,181 @@
+name: Deploy OpenHands to EC2
+
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: 'AWS Region'
+        required: true
+        default: 'ap-northeast-1'
+        type: choice
+        options:
+          - ap-northeast-1
+          - us-east-1
+          - us-west-2
+          - eu-west-1
+      instance_type:
+        description: 'EC2 Instance Type'
+        required: true
+        default: 't3.small'
+        type: choice
+        options:
+          - t3.small
+          - t3.medium
+          - t3.large
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ github.event.inputs.region }}
+
+      - name: Create user-data script
+        run: |
+          cat > user-data.sh << 'EOF'
+          #!/bin/bash
+
+          # ログファイルの設定
+          LOG_FILE="/var/log/openhands_setup.log"
+          exec > >(tee -a $LOG_FILE) 2>&1
+
+          echo "$(date): Starting OpenHands setup script"
+
+          # システムの更新とDockerのインストール
+          echo "$(date): Updating system and installing Docker"
+          apt-get update
+          apt-get install -y docker.io
+
+          # Dockerサービスの起動
+          echo "$(date): Starting Docker service"
+          systemctl start docker
+          systemctl enable docker
+
+          # OpenHandsの状態ディレクトリを作成
+          echo "$(date): Creating OpenHands state directory"
+          mkdir -p /home/ubuntu/.openhands-state
+          chown -R ubuntu:ubuntu /home/ubuntu/.openhands-state
+
+          # OpenHandsのDockerイメージを取得
+          echo "$(date): Pulling OpenHands Docker image"
+          docker pull docker.all-hands.dev/all-hands-ai/openhands:0.30
+
+          # ランタイムのDockerイメージを取得
+          echo "$(date): Pulling runtime Docker image"
+          docker pull docker.all-hands.dev/all-hands-ai/runtime:0.30-nikolaik
+
+          # OpenHandsコンテナの実行
+          echo "$(date): Running OpenHands container"
+          docker run -d --restart=always \
+            -e SANDBOX_RUNTIME_CONTAINER_IMAGE=docker.all-hands.dev/all-hands-ai/runtime:0.30-nikolaik \
+            -e LOG_ALL_EVENTS=true \
+            -e ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}" \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v /home/ubuntu/.openhands-state:/.openhands-state \
+            -p 3000:3000 \
+            --add-host host.docker.internal:host-gateway \
+            --name openhands-app \
+            docker.all-hands.dev/all-hands-ai/openhands:0.30
+
+          # Dockerコンテナの状態を確認
+          echo "$(date): Checking Docker container status"
+          docker ps
+
+          # セットアップ完了メッセージ
+          PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+          echo "$(date): Setup completed. Access at http://$PUBLIC_IP:3000"
+          echo "$(date): Log file is available at $LOG_FILE"
+          EOF
+
+      - name: Create or get security group
+        id: security_group
+        run: |
+          SG_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=OpenHands-SG" --query "SecurityGroups[0].GroupId" --output text)
+          
+          if [ "$SG_ID" == "None" ] || [ -z "$SG_ID" ]; then
+            echo "Creating security group 'OpenHands-SG'..."
+            SG_ID=$(aws ec2 create-security-group --group-name OpenHands-SG --description "Security group for OpenHands" --vpc-id $(aws ec2 describe-vpcs --query "Vpcs[0].VpcId" --output text) --output text)
+            
+            # SSHポートを開放
+            aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 22 --cidr 0.0.0.0/0
+            
+            # HTTPポートを開放
+            aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 80 --cidr 0.0.0.0/0
+            
+            # HTTPSポートを開放
+            aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 443 --cidr 0.0.0.0/0
+            
+            # OpenHandsポートを開放
+            aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 3000 --cidr 0.0.0.0/0
+            
+            # APIポートを開放
+            aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 5000 --cidr 0.0.0.0/0
+            aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 5001 --cidr 0.0.0.0/0
+            
+            # Webサーバーポートを開放
+            aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 8080 --cidr 0.0.0.0/0
+          else
+            echo "Using existing security group 'OpenHands-SG' ($SG_ID)."
+          fi
+          
+          echo "security_group_id=$SG_ID" >> $GITHUB_OUTPUT
+
+      - name: Create or get key pair
+        id: key_pair
+        run: |
+          KEY_NAME="OpenHands-Key"
+          
+          if ! aws ec2 describe-key-pairs --key-names $KEY_NAME > /dev/null 2>&1; then
+            echo "Creating key pair '$KEY_NAME'..."
+            mkdir -p ~/.ssh
+            aws ec2 create-key-pair --key-name $KEY_NAME --query "KeyMaterial" --output text > ~/.ssh/$KEY_NAME.pem
+            chmod 400 ~/.ssh/$KEY_NAME.pem
+            echo "key_created=true" >> $GITHUB_OUTPUT
+          else
+            echo "Key pair '$KEY_NAME' already exists."
+            echo "key_created=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "key_name=$KEY_NAME" >> $GITHUB_OUTPUT
+
+      - name: Launch EC2 instance
+        id: ec2_instance
+        run: |
+          INSTANCE_ID=$(aws ec2 run-instances \
+            --image-id $(aws ec2 describe-images --owners amazon --filters "Name=name,Values=ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*" "Name=state,Values=available" --query "sort_by(Images, &CreationDate)[-1].ImageId" --output text) \
+            --instance-type ${{ github.event.inputs.instance_type }} \
+            --key-name ${{ steps.key_pair.outputs.key_name }} \
+            --security-group-ids ${{ steps.security_group.outputs.security_group_id }} \
+            --user-data file://user-data.sh \
+            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=OpenHands-Server}]" \
+            --query "Instances[0].InstanceId" \
+            --output text)
+          
+          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+          
+          echo "Waiting for instance to be running..."
+          aws ec2 wait instance-running --instance-ids $INSTANCE_ID
+          
+          PUBLIC_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query "Reservations[0].Instances[0].PublicIpAddress" --output text)
+          echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+
+      - name: Save instance info
+        if: steps.key_pair.outputs.key_created == 'true'
+        run: |
+          echo "Warning: A new key pair was created, but GitHub Actions cannot return the private key for security reasons."
+          echo "You will need to create a new key pair manually and update the instance to use it."
+
+      - name: Output instance info
+        run: |
+          echo "OpenHands has been deployed!"
+          echo "Instance ID: ${{ steps.ec2_instance.outputs.instance_id }}"
+          echo "Public IP: ${{ steps.ec2_instance.outputs.public_ip }}"
+          echo "OpenHands URL: http://${{ steps.ec2_instance.outputs.public_ip }}:3000"
+          echo "Note: It may take 5-10 minutes for the instance to complete initialization and for OpenHands to be accessible."
