@@ -1,0 +1,118 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      - name: Install Dependencies
+        run: |
+          cd client && npm ci
+          cd ../server && npm ci
+      - name: Run Client Tests
+        run: cd client && npm test
+      - name: Run Server Tests
+        run: cd server && npm test
+
+  build:
+    name: Build Application
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      - name: Install Dependencies
+        run: |
+          cd client && npm ci
+          cd ../server && npm ci
+      - name: Build Client
+        run: cd client && npm run build:prod
+      - name: Build Server
+        run: cd server && npm run build
+      - name: Upload Client Build
+        uses: actions/upload-artifact@v3
+        with:
+          name: client-build
+          path: client/build
+      - name: Upload Server Build
+        uses: actions/upload-artifact@v3
+        with:
+          name: server-build
+          path: server/dist
+
+  approve:
+    name: Approval for Production Deployment
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Manual Approval
+        uses: trstringer/manual-approval@v1
+        with:
+          secret: ${{ secrets.GITHUB_TOKEN }}
+          approvers: your-github-username
+          minimum-approvals: 1
+          issue-title: "Approve Production Deployment"
+          issue-body: "Please approve or deny the deployment to production."
+          exclude-workflow-initiator-as-approver: false
+
+  deploy:
+    name: Deploy to Production Environment
+    needs: approve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Download Client Build
+        uses: actions/download-artifact@v3
+        with:
+          name: client-build
+          path: client/build
+      - name: Download Server Build
+        uses: actions/download-artifact@v3
+        with:
+          name: server-build
+          path: server/dist
+      - name: Setup SSH Key
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+      - name: Deploy to Production Server
+        env:
+          PROD_SERVER_IP: ${{ secrets.PROD_SERVER_IP }}
+        run: |
+          # SSH接続の確認
+          ssh -o StrictHostKeyChecking=no ubuntu@$PROD_SERVER_IP "echo Connected to Production Server"
+          
+          # 必要なディレクトリを作成
+          ssh ubuntu@$PROD_SERVER_IP "mkdir -p ~/openhands-ec2-manager/server/dist ~/openhands-ec2-manager/client/build"
+          
+          # サーバーファイルをコピー
+          scp -r server/dist/* ubuntu@$PROD_SERVER_IP:~/openhands-ec2-manager/server/dist/
+          scp server/package.json ubuntu@$PROD_SERVER_IP:~/openhands-ec2-manager/server/
+          
+          # クライアントファイルをコピー
+          scp -r client/build/* ubuntu@$PROD_SERVER_IP:~/openhands-ec2-manager/client/build/
+          
+          # 依存関係をインストール
+          ssh ubuntu@$PROD_SERVER_IP "cd ~/openhands-ec2-manager/server && npm install --production"
+          
+          # サーバーとクライアントを再起動
+          ssh ubuntu@$PROD_SERVER_IP "cd ~/openhands-ec2-manager && ./restart-services.sh"
+      - name: Notify Deployment
+        run: |
+          echo "Deployed to Production Environment"
+          echo "URL: https://teai.io"

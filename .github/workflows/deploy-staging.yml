@@ -1,0 +1,103 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches:
+      - staging
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      - name: Install Dependencies
+        run: |
+          cd client && npm ci
+          cd ../server && npm ci
+      - name: Run Client Tests
+        run: cd client && npm test
+      - name: Run Server Tests
+        run: cd server && npm test
+
+  build:
+    name: Build Application
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      - name: Install Dependencies
+        run: |
+          cd client && npm ci
+          cd ../server && npm ci
+      - name: Build Client
+        run: cd client && npm run build:staging
+      - name: Build Server
+        run: cd server && npm run build
+      - name: Upload Client Build
+        uses: actions/upload-artifact@v3
+        with:
+          name: client-build
+          path: client/build
+      - name: Upload Server Build
+        uses: actions/upload-artifact@v3
+        with:
+          name: server-build
+          path: server/dist
+
+  deploy:
+    name: Deploy to Staging Environment
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Download Client Build
+        uses: actions/download-artifact@v3
+        with:
+          name: client-build
+          path: client/build
+      - name: Download Server Build
+        uses: actions/download-artifact@v3
+        with:
+          name: server-build
+          path: server/dist
+      - name: Setup SSH Key
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      - name: Deploy to Staging Server
+        env:
+          STAGING_SERVER_IP: ${{ secrets.STAGING_SERVER_IP }}
+        run: |
+          # SSH接続の確認
+          ssh -o StrictHostKeyChecking=no ubuntu@$STAGING_SERVER_IP "echo Connected to Staging Server"
+          
+          # 必要なディレクトリを作成
+          ssh ubuntu@$STAGING_SERVER_IP "mkdir -p ~/openhands-ec2-manager/server/dist ~/openhands-ec2-manager/client/build"
+          
+          # サーバーファイルをコピー
+          scp -r server/dist/* ubuntu@$STAGING_SERVER_IP:~/openhands-ec2-manager/server/dist/
+          scp server/package.json ubuntu@$STAGING_SERVER_IP:~/openhands-ec2-manager/server/
+          
+          # クライアントファイルをコピー
+          scp -r client/build/* ubuntu@$STAGING_SERVER_IP:~/openhands-ec2-manager/client/build/
+          
+          # 依存関係をインストール
+          ssh ubuntu@$STAGING_SERVER_IP "cd ~/openhands-ec2-manager/server && npm install --production"
+          
+          # サーバーとクライアントを再起動
+          ssh ubuntu@$STAGING_SERVER_IP "cd ~/openhands-ec2-manager && ./restart-services.sh"
+      - name: Notify Deployment
+        run: |
+          echo "Deployed to Staging Environment"
+          echo "URL: https://staging.teai.io"
