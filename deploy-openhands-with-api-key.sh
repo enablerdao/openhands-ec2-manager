@@ -145,12 +145,18 @@ docker pull docker.all-hands.dev/all-hands-ai/openhands:0.30
 echo "$(date): Pulling runtime Docker image"
 docker pull docker.all-hands.dev/all-hands-ai/runtime:0.30-nikolaik
 
+# .envファイルの作成
+echo "$(date): Creating .env file"
+cat > /home/ubuntu/.openhands.env << EOF
+LLM_API_KEY=ANTHROPIC_API_KEY_PLACEHOLDER
+SANDBOX_RUNTIME_CONTAINER_IMAGE=docker.all-hands.dev/all-hands-ai/runtime:0.30-nikolaik
+LOG_ALL_EVENTS=true
+EOF
+
 # OpenHandsコンテナの実行
 echo "$(date): Running OpenHands container"
 docker run -d --restart=always \
-  -e SANDBOX_RUNTIME_CONTAINER_IMAGE=docker.all-hands.dev/all-hands-ai/runtime:0.30-nikolaik \
-  -e LOG_ALL_EVENTS=true \
-  -e LLM_API_KEY="ANTHROPIC_API_KEY_PLACEHOLDER" \
+  --env-file /home/ubuntu/.openhands.env \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /home/ubuntu/.openhands-state:/.openhands-state \
   -p 3000:3000 \
