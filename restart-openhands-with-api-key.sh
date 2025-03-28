@@ -45,7 +45,7 @@ if [ "$INSTANCE_STATE" == "running" ]; then
   
   # SSHで接続してDockerコンテナを再起動
   echo -e "${YELLOW}OpenHandsコンテナを再起動しています...${NC}"
-  ssh -i OpenHands-Key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 ubuntu@$IP_ADDRESS "sudo docker stop openhands-app || true && sudo docker run -d --rm --pull=always -e SANDBOX_RUNTIME_CONTAINER_IMAGE=docker.all-hands.dev/all-hands-ai/runtime:0.30-nikolaik -e LOG_ALL_EVENTS=true -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY -v /var/run/docker.sock:/var/run/docker.sock -v /home/ubuntu/.openhands-state:/.openhands-state -p 3000:3000 --add-host host.docker.internal:host-gateway --name openhands-app docker.all-hands.dev/all-hands-ai/openhands:0.30"
+  ssh -i OpenHands-Key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 ubuntu@$IP_ADDRESS "sudo docker stop openhands-app || true && sudo docker run -d --rm --pull=always -e SANDBOX_RUNTIME_CONTAINER_IMAGE=docker.all-hands.dev/all-hands-ai/runtime:0.30-nikolaik -e LOG_ALL_EVENTS=true -e LLM_API_KEY=$ANTHROPIC_API_KEY -v /var/run/docker.sock:/var/run/docker.sock -v /home/ubuntu/.openhands-state:/.openhands-state -p 3000:3000 --add-host host.docker.internal:host-gateway --name openhands-app docker.all-hands.dev/all-hands-ai/openhands:0.30"
   
   echo -e "${GREEN}OpenHandsの再起動が完了しました。${NC}"
   echo -e "${GREEN}OpenHandsのURL: http://$IP_ADDRESS:3000${NC}"
@@ -69,7 +69,7 @@ else
   
   # SSHで接続してDockerコンテナを再起動
   echo -e "${YELLOW}OpenHandsコンテナを再起動しています...${NC}"
-  ssh -i OpenHands-Key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 ubuntu@$IP_ADDRESS "sudo docker stop openhands-app || true && sudo docker run -d --rm --pull=always -e SANDBOX_RUNTIME_CONTAINER_IMAGE=docker.all-hands.dev/all-hands-ai/runtime:0.30-nikolaik -e LOG_ALL_EVENTS=true -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY -v /var/run/docker.sock:/var/run/docker.sock -v /home/ubuntu/.openhands-state:/.openhands-state -p 3000:3000 --add-host host.docker.internal:host-gateway --name openhands-app docker.all-hands.dev/all-hands-ai/openhands:0.30"
+  ssh -i OpenHands-Key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 ubuntu@$IP_ADDRESS "sudo docker stop openhands-app || true && sudo docker run -d --rm --pull=always -e SANDBOX_RUNTIME_CONTAINER_IMAGE=docker.all-hands.dev/all-hands-ai/runtime:0.30-nikolaik -e LOG_ALL_EVENTS=true -e LLM_API_KEY=$ANTHROPIC_API_KEY -v /var/run/docker.sock:/var/run/docker.sock -v /home/ubuntu/.openhands-state:/.openhands-state -p 3000:3000 --add-host host.docker.internal:host-gateway --name openhands-app docker.all-hands.dev/all-hands-ai/openhands:0.30"
   
   echo -e "${GREEN}OpenHandsの起動が完了しました。${NC}"
   echo -e "${GREEN}OpenHandsのURL: http://$IP_ADDRESS:3000${NC}"

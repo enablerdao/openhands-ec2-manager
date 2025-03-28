@@ -150,7 +150,7 @@ echo "$(date): Running OpenHands container"
 docker run -d --restart=always \
   -e SANDBOX_RUNTIME_CONTAINER_IMAGE=docker.all-hands.dev/all-hands-ai/runtime:0.30-nikolaik \
   -e LOG_ALL_EVENTS=true \
-  -e ANTHROPIC_API_KEY="ANTHROPIC_API_KEY_PLACEHOLDER" \
+  -e LLM_API_KEY="ANTHROPIC_API_KEY_PLACEHOLDER" \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /home/ubuntu/.openhands-state:/.openhands-state \
   -p 3000:3000 \
