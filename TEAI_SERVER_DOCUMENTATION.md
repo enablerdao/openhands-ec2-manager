@@ -9,8 +9,9 @@
 3. [DNS設定 (Route 53)](#dns設定-route-53)
 4. [Dockerコンテナ](#dockerコンテナ)
 5. [環境変数](#環境変数)
-6. [メンテナンス手順](#メンテナンス手順)
-7. [トラブルシューティング](#トラブルシューティング)
+6. [GitHub Actions CI/CD](#github-actions-cicd)
+7. [メンテナンス手順](#メンテナンス手順)
+8. [トラブルシューティング](#トラブルシューティング)
 
 ## AWS構成概要
 
@@ -21,6 +22,8 @@ teai.ioのインフラストラクチャは、以下のAWSサービスで構成�
 - **SES**: メール送信（SPFレコードが設定されています）
 
 すべてのリソースは東京リージョン（ap-northeast-1）にデプロイされています。
+
+デプロイは主にGitHub Actionsを使用して自動化されています。
 
 ## EC2インスタンス
 
@@ -118,6 +121,50 @@ LLM_API_KEY=sk-ant-your-actual-api-key-here
 ```
 
 **注意**: 実際のAPIキーは安全に管理し、このドキュメントには記載しないでください。
+
+## GitHub Actions CI/CD
+
+OpenHandsのデプロイは、GitHub Actionsを使用して自動化されています。
+
+### ワークフロー構成
+
+2つの主要なワークフローがあります：
+
+1. **本番環境デプロイ** (`deploy-production.yml`)
+   - トリガー: `main`ブランチへのプッシュ
+   - 環境: `production`
+   - インスタンス名: `OpenHands-Production`
+   - セキュリティグループ: `OpenHands-SG-Prod`
+   - キーペア: `OpenHands-Key-Prod`
+
+2. **ステージング環境デプロイ** (`deploy-staging.yml`)
+   - トリガー: `staging`ブランチへのプッシュ
+   - 環境: `staging`
+   - インスタンス名: `OpenHands-Staging`
+   - セキュリティグループ: `OpenHands-SG-Staging`
+   - キーペア: `OpenHands-Key-Staging`
+
+### 必要なGitHub Secrets
+
+ワークフローの実行には、以下のGitHub Secretsが必要です：
+
+- `AWS_ACCESS_KEY_ID`: AWSアクセスキーID
+- `AWS_SECRET_ACCESS_KEY`: AWSシークレットアクセスキー
+- `ANTHROPIC_API_KEY`: Anthropic APIキー（LLM_API_KEYとして使用）
+- `SSH_PRIVATE_KEY`: SSHプライベートキー
+- `SLACK_WEBHOOK_URL`: Slack通知用のWebhook URL（オプション）
+
+### デプロイプロセス
+
+1. コードのチェックアウト
+2. AWS認証情報の設定
+3. ユーザーデータスクリプトの作成
+4. セキュリティグループの作成または取得
+5. キーペアの作成または取得
+6. 既存のインスタンスの確認
+7. 必要に応じて新しいインスタンスを起動
+8. 既存のインスタンスの更新（.envファイルの作成とDockerコンテナの再起動）
+9. インスタンス情報の出力とSlack通知（設定されている場合）
 
 ## メンテナンス手順
 
