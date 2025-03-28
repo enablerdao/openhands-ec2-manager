@@ -1,8 +1,8 @@
-import express from 'express';
+import express, { Router } from 'express';
 import { saveCredentials, getCredentials, updateCredentials, getRegions } from '../controllers/awsController';
 import { authenticate } from '../middleware/auth';
 
-const router = express.Router();
+const router: Router = express.Router();
 
 // すべてのルートで認証が必要
 router.use(authenticate);

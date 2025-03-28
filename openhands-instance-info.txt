@@ -1,0 +1,7 @@
+# OpenHands EC2インスタンス情報
+インスタンスID: i-0ef6dfbddff11f1b6
+リージョン: ap-northeast-1
+パブリックIP: 35.78.114.51
+OpenHandsのURL: http://35.78.114.51:3000
+SSHコマンド: ssh -i OpenHands-Key.pem ubuntu@35.78.114.51
+インスタンス終了コマンド: aws ec2 terminate-instances --region ap-northeast-1 --instance-ids i-0ef6dfbddff11f1b6

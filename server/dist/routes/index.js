@@ -1,0 +1,20 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const auth_1 = __importDefault(require("./auth"));
+const aws_1 = __importDefault(require("./aws"));
+const instances_1 = __importDefault(require("./instances"));
+const amis_1 = __importDefault(require("./amis"));
+const securityGroups_1 = __importDefault(require("./securityGroups"));
+const keyPairs_1 = __importDefault(require("./keyPairs"));
+const router = express_1.default.Router();
+router.use('/auth', auth_1.default);
+router.use('/aws', aws_1.default);
+router.use('/instances', instances_1.default);
+router.use('/amis', amis_1.default);
+router.use('/security-groups', securityGroups_1.default);
+router.use('/key-pairs', keyPairs_1.default);
+exports.default = router;

@@ -17,13 +17,14 @@ declare global {
 }
 
 // 認証ミドルウェア
-export const authenticate = (req: Request, res: Response, next: NextFunction) => {
+export const authenticate = (req: Request, res: Response, next: NextFunction): void => {
   // ヘッダーからトークンを取得
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
-    return res.status(401).json({ message: '認証トークンがありません' });
+    res.status(401).json({ message: '認証トークンがありません' });
+    return;
   }
 
   try {
@@ -32,6 +33,7 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
     req.userId = decoded.userId;
     next();
   } catch (error) {
-    return res.status(403).json({ message: '無効なトークンです' });
+    res.status(403).json({ message: '無効なトークンです' });
+    return;
   }
 };

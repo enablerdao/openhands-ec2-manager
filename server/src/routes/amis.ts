@@ -1,8 +1,8 @@
-import express from 'express';
+import express, { Router } from 'express';
 import { getAmis, getRecommendedAmis } from '../controllers/amisController';
 import { authenticate } from '../middleware/auth';
 
-const router = express.Router();
+const router: Router = express.Router();
 
 // すべてのルートで認証が必要
 router.use(authenticate);

@@ -4,12 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 
 // ルートのインポート
-import authRoutes from './routes/auth';
-import awsRoutes from './routes/aws';
-import instanceRoutes from './routes/instances';
-import amiRoutes from './routes/amis';
-import securityGroupRoutes from './routes/securityGroups';
-import keyPairRoutes from './routes/keyPairs';
+import apiRoutes from './routes';
 
 // 環境変数の設定
 dotenv.config();
@@ -17,17 +12,16 @@ dotenv.config();
 const app = express();
 
 // ミドルウェア
-app.use(cors());
+app.use(cors({
+  origin: '*', // すべてのオリジンを許可
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // APIルート
-app.use('/api/auth', authRoutes);
-app.use('/api/aws', awsRoutes);
-app.use('/api/instances', instanceRoutes);
-app.use('/api/amis', amiRoutes);
-app.use('/api/security-groups', securityGroupRoutes);
-app.use('/api/key-pairs', keyPairRoutes);
+app.use('/api', apiRoutes);
 
 // 本番環境ではReactアプリを提供
 if (process.env.NODE_ENV === 'production') {

@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Router } from 'express';
 import { 
   getSecurityGroups, 
   createSecurityGroup, 
@@ -6,7 +6,7 @@ import {
 } from '../controllers/securityGroupsController';
 import { authenticate } from '../middleware/auth';
 
-const router = express.Router();
+const router: Router = express.Router();
 
 // すべてのルートで認証が必要
 router.use(authenticate);

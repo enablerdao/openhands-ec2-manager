@@ -2,7 +2,10 @@ import AWS from 'aws-sdk';
 import { getDatabase } from '../utils/db';
 
 // ユーザーのAWS認証情報を取得
-export const getUserAwsCredentials = async (userId: number) => {
+export const getUserAwsCredentials = async (userId: number | undefined) => {
+  if (!userId) {
+    throw new Error('ユーザーIDが見つかりません');
+  }
   const db = await getDatabase();
   
   const credentials = await db.get(
@@ -22,7 +25,7 @@ export const getUserAwsCredentials = async (userId: number) => {
 };
 
 // EC2クライアントを作成
-export const createEC2Client = async (userId: number, region?: string) => {
+export const createEC2Client = async (userId: number | undefined, region?: string) => {
   const credentials = await getUserAwsCredentials(userId);
   
   return new AWS.EC2({
@@ -83,8 +86,8 @@ docker ps -a >> $LOGFILE
 
 # ステータスメッセージを作成
 PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
-echo "$(date): Setup completed. Access at http://${PUBLIC_IP}:3000"
-echo "OpenHands setup completed. Access at http://${PUBLIC_IP}:3000" > /home/ubuntu/setup_complete.txt
+echo "$(date): Setup completed. Access at http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):3000"
+echo "OpenHands setup completed. Access at http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):3000" > /home/ubuntu/setup_complete.txt
 chown ubuntu:ubuntu /home/ubuntu/setup_complete.txt
 
 # ログファイルの場所を記録

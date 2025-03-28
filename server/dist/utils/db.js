@@ -1,18 +1,19 @@
-import sqlite3 from 'sqlite3';
-import { Database } from 'sqlite3';
-import path from 'path';
-import dotenv from 'dotenv';
-
-dotenv.config();
-
-const dbPath = process.env.DB_PATH || path.join(__dirname, '../../database.sqlite');
-
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getDatabase = exports.initializeDatabase = void 0;
+const sqlite3_1 = __importDefault(require("sqlite3"));
+const path_1 = __importDefault(require("path"));
+const dotenv_1 = __importDefault(require("dotenv"));
+dotenv_1.default.config();
+const dbPath = process.env.DB_PATH || path_1.default.join(__dirname, '../../database.sqlite');
 // データベース接続を初期化
-export const initializeDatabase = (): sqlite3.Database => {
-  const db = new sqlite3.Database(dbPath);
-
-  // ユーザーテーブルの作成
-  db.exec(`
+const initializeDatabase = () => {
+    const db = new sqlite3_1.default.Database(dbPath);
+    // ユーザーテーブルの作成
+    db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL,
@@ -21,9 +22,8 @@ export const initializeDatabase = (): sqlite3.Database => {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
-
-  // AWS認証情報テーブルの作成
-  db.exec(`
+    // AWS認証情報テーブルの作成
+    db.exec(`
     CREATE TABLE IF NOT EXISTS aws_credentials (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
@@ -35,9 +35,8 @@ export const initializeDatabase = (): sqlite3.Database => {
       FOREIGN KEY (user_id) REFERENCES users (id)
     )
   `);
-
-  // インスタンステーブルの作成
-  db.exec(`
+    // インスタンステーブルの作成
+    db.exec(`
     CREATE TABLE IF NOT EXISTS instances (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
@@ -52,16 +51,15 @@ export const initializeDatabase = (): sqlite3.Database => {
       FOREIGN KEY (user_id) REFERENCES users (id)
     )
   `);
-
-  return db;
+    return db;
 };
-
+exports.initializeDatabase = initializeDatabase;
 // データベース接続のシングルトン
-let db: sqlite3.Database | null = null;
-
-export const getDatabase = (): sqlite3.Database => {
-  if (!db) {
-    db = initializeDatabase();
-  }
-  return db;
+let db = null;
+const getDatabase = () => {
+    if (!db) {
+        db = (0, exports.initializeDatabase)();
+    }
+    return db;
 };
+exports.getDatabase = getDatabase;
