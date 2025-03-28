@@ -11,6 +11,7 @@ OpenHandsをEC2上で簡単に立ち上げたり管理するためのWebUIです
 - インスタンスの管理（起動/停止/終了）
 - インスタンスの詳細情報表示
 - OpenHandsへのアクセスリンク
+- 環境変数（LLM APIキーなど）の管理
 - GitHub Actionsによる自動CI/CD
 
 ## 技術スタック
@@ -120,7 +121,23 @@ scp -r client/build/* user@your-server:/path/to/deployment/client/
    - インスタンスタイプを選択
    - セキュリティグループを設定
    - キーペアを選択または作成
+   - LLM APIキーを設定
 4. インスタンスの起動後、OpenHandsにアクセス
+
+### 環境変数の管理
+
+OpenHandsの実行には、以下の環境変数が必要です：
+
+```
+# LLM API設定
+LLM_API_KEY=your_api_key_here
+
+# ランタイム設定
+SANDBOX_RUNTIME_CONTAINER_IMAGE=docker.all-hands.dev/all-hands-ai/runtime:0.30-nikolaik
+LOG_ALL_EVENTS=true
+```
+
+これらの環境変数は、WebUIから簡単に更新できます。また、GitHub Actionsを使用する場合は、GitHubのSecretsに設定することで自動的に適用されます。
 
 ## ライセンス
 
