@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { getDatabase } from '../utils/db';
 import dotenv from 'dotenv';
 import sqlite3 from 'sqlite3';
+import { sendVerificationEmail } from './emailVerificationController';
 
 dotenv.config();
 
@@ -39,25 +40,37 @@ export const register = (req: Request, res: Response) => {
         const hashedPassword = await bcrypt.hash(password, salt);
 
         // ユーザーの作成
-        db.run('INSERT INTO users (username, email, password) VALUES (?, ?, ?)', [username, email, hashedPassword], function(err) {
-          if (err) {
-            console.error('ユーザー作成エラー:', err);
-            return res.status(500).json({ message: 'サーバーエラーが発生しました' });
-          }
-
-          // JWTトークンの生成
-          const userId = this.lastID;
-          const token = jwt.sign({ userId }, JWT_SECRET, { expiresIn: '1d' });
-
-          res.status(201).json({
-            message: 'ユーザーが正常に登録されました',
-            token,
-            user: {
-              id: userId,
-              username,
-              email
+        db.run('INSERT INTO users (username, email, password, points, email_verified) VALUES (?, ?, ?, ?, ?)', 
+          [username, email, hashedPassword, 0, 0], 
+          async function(err) {
+            if (err) {
+              console.error('ユーザー作成エラー:', err);
+              return res.status(500).json({ message: 'サーバーエラーが発生しました' });
             }
-          });
+
+            // JWTトークンの生成
+            const userId = this.lastID;
+            const token = jwt.sign({ userId }, JWT_SECRET, { expiresIn: '1d' });
+
+            // 確認メールの送信
+            try {
+              await sendVerificationEmail(userId, email, username);
+            } catch (error) {
+              console.error('確認メール送信エラー:', error);
+              // メール送信エラーでも処理は続行
+            }
+
+            res.status(201).json({
+              message: 'ユーザーが正常に登録されました。メールアドレスの確認を行ってください。',
+              token,
+              user: {
+                id: userId,
+                username,
+                email,
+                points: 0,
+                email_verified: false
+              }
+            });
         });
       } catch (error) {
         console.error('パスワードハッシュ化エラー:', error);
@@ -109,7 +122,9 @@ export const login = (req: Request, res: Response) => {
           user: {
             id: user.id,
             username: user.username,
-            email: user.email
+            email: user.email,
+            points: user.points,
+            email_verified: user.email_verified === 1
           }
         });
       } catch (error) {
@@ -135,7 +150,7 @@ export const getMe = (req: Request, res: Response) => {
     const db = getDatabase();
     
     // ユーザー情報の取得
-    db.get('SELECT id, username, email, created_at FROM users WHERE id = ?', [userId], (err, user) => {
+    db.get('SELECT id, username, email, points, email_verified, created_at FROM users WHERE id = ?', [userId], (err, user) => {
       if (err) {
         console.error('データベースエラー:', err);
         return res.status(500).json({ message: 'サーバーエラーが発生しました' });

@@ -6,6 +6,9 @@ import amisRoutes from './amis';
 import securityGroupsRoutes from './securityGroups';
 import keyPairsRoutes from './keyPairs';
 import envRoutes from './env';
+import emailRoutes from './email';
+import pointsRoutes from './points';
+import paymentsRoutes from './payments';
 
 const router = express.Router();
 
@@ -16,5 +19,8 @@ router.use('/amis', amisRoutes);
 router.use('/security-groups', securityGroupsRoutes);
 router.use('/key-pairs', keyPairsRoutes);
 router.use('/env', envRoutes);
+router.use('/email', emailRoutes);
+router.use('/points', pointsRoutes);
+router.use('/payments', paymentsRoutes);
 
 export default router;

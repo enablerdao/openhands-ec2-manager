@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { createEC2Client, generateOpenHandsUserData } from '../services/awsService';
 import { getDatabase } from '../utils/db';
+import { consumePoints } from './pointsController';
 
 // インスタンス一覧を取得
 export const getInstances = async (req: Request, res: Response) => {
@@ -43,6 +44,34 @@ export const launchInstance = async (req: Request, res: Response) => {
     // 入力検証
     if (!imageId || !keyName || !securityGroupIds) {
       return res.status(400).json({ message: 'すべての必須フィールドを入力してください' });
+    }
+    
+    // ユーザーのメール認証状態を確認
+    const db = getDatabase();
+    const user = await new Promise<any>((resolve, reject) => {
+      db.get('SELECT email_verified, points FROM users WHERE id = ?', [userId], (err, user) => {
+        if (err) reject(err);
+        else resolve(user);
+      });
+    });
+    
+    if (!user) {
+      return res.status(404).json({ message: 'ユーザーが見つかりません' });
+    }
+    
+    if (!user.email_verified) {
+      return res.status(403).json({ message: 'メールアドレスの確認が必要です' });
+    }
+    
+    // ポイントの消費（インスタンス起動には1ポイント）
+    const pointsConsumed = await consumePoints(userId, 1, 'LAUNCH_INSTANCE', 'インスタンス起動');
+    
+    if (!pointsConsumed) {
+      return res.status(402).json({ 
+        message: 'ポイントが不足しています', 
+        points: user.points,
+        required: 1
+      });
     }
     
     // テスト目的でハードコードされたインスタンス情報を返す
@@ -128,6 +157,34 @@ export const startInstance = async (req: Request, res: Response) => {
     const userId = req.userId;
     const { instanceId } = req.params;
     
+    // ユーザーのメール認証状態とポイントを確認
+    const db = getDatabase();
+    const user = await new Promise<any>((resolve, reject) => {
+      db.get('SELECT email_verified, points FROM users WHERE id = ?', [userId], (err, user) => {
+        if (err) reject(err);
+        else resolve(user);
+      });
+    });
+    
+    if (!user) {
+      return res.status(404).json({ message: 'ユーザーが見つかりません' });
+    }
+    
+    if (!user.email_verified) {
+      return res.status(403).json({ message: 'メールアドレスの確認が必要です' });
+    }
+    
+    // ポイントの消費（インスタンス起動には1ポイント）
+    const pointsConsumed = await consumePoints(userId, 1, 'START_INSTANCE', 'インスタンス起動', null);
+    
+    if (!pointsConsumed) {
+      return res.status(402).json({ 
+        message: 'ポイントが不足しています', 
+        points: user.points,
+        required: 1
+      });
+    }
+    
     // EC2クライアントを作成
     const ec2 = await createEC2Client(userId);
     
@@ -135,7 +192,6 @@ export const startInstance = async (req: Request, res: Response) => {
     await ec2.startInstances({ InstanceIds: [instanceId] }).promise();
     
     // データベースを更新
-    const db = await getDatabase();
     await db.run(
       'UPDATE instances SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE instance_id = ? AND user_id = ?',
       ['pending', instanceId, userId]
