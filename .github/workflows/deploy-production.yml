@@ -1,118 +1,214 @@
-name: Deploy to Production
+name: Deploy OpenHands to Production
 
 on:
   push:
     branches:
-      - main
+      - main  # mainブランチにプッシュされたときに実行
 
 jobs:
-  test:
-    name: Run Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          cache: 'npm'
-      - name: Install Dependencies
-        run: |
-          cd client && npm ci
-          cd ../server && npm ci
-      - name: Run Client Tests
-        run: cd client && npm test
-      - name: Run Server Tests
-        run: cd server && npm test
-
-  build:
-    name: Build Application
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          cache: 'npm'
-      - name: Install Dependencies
-        run: |
-          cd client && npm ci
-          cd ../server && npm ci
-      - name: Build Client
-        run: cd client && npm run build:prod
-      - name: Build Server
-        run: cd server && npm run build
-      - name: Upload Client Build
-        uses: actions/upload-artifact@v3
-        with:
-          name: client-build
-          path: client/build
-      - name: Upload Server Build
-        uses: actions/upload-artifact@v3
-        with:
-          name: server-build
-          path: server/dist
-
-  approve:
-    name: Approval for Production Deployment
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Manual Approval
-        uses: trstringer/manual-approval@v1
-        with:
-          secret: ${{ secrets.GITHUB_TOKEN }}
-          approvers: your-github-username
-          minimum-approvals: 1
-          issue-title: "Approve Production Deployment"
-          issue-body: "Please approve or deny the deployment to production."
-          exclude-workflow-initiator-as-approver: false
-
   deploy:
-    name: Deploy to Production Environment
-    needs: approve
     runs-on: ubuntu-latest
+    environment: production
     steps:
-      - uses: actions/checkout@v3
-      - name: Download Client Build
-        uses: actions/download-artifact@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
         with:
-          name: client-build
-          path: client/build
-      - name: Download Server Build
-        uses: actions/download-artifact@v3
-        with:
-          name: server-build
-          path: server/dist
-      - name: Setup SSH Key
-        uses: webfactory/ssh-agent@v0.7.0
-        with:
-          ssh-private-key: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
-      - name: Deploy to Production Server
-        env:
-          PROD_SERVER_IP: ${{ secrets.PROD_SERVER_IP }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-1  # 本番環境のリージョン
+
+      - name: Create user-data script
         run: |
-          # SSH接続の確認
-          ssh -o StrictHostKeyChecking=no ubuntu@$PROD_SERVER_IP "echo Connected to Production Server"
-          
-          # 必要なディレクトリを作成
-          ssh ubuntu@$PROD_SERVER_IP "mkdir -p ~/openhands-ec2-manager/server/dist ~/openhands-ec2-manager/client/build"
-          
-          # サーバーファイルをコピー
-          scp -r server/dist/* ubuntu@$PROD_SERVER_IP:~/openhands-ec2-manager/server/dist/
-          scp server/package.json ubuntu@$PROD_SERVER_IP:~/openhands-ec2-manager/server/
-          
-          # クライアントファイルをコピー
-          scp -r client/build/* ubuntu@$PROD_SERVER_IP:~/openhands-ec2-manager/client/build/
-          
-          # 依存関係をインストール
-          ssh ubuntu@$PROD_SERVER_IP "cd ~/openhands-ec2-manager/server && npm install --production"
-          
-          # サーバーとクライアントを再起動
-          ssh ubuntu@$PROD_SERVER_IP "cd ~/openhands-ec2-manager && ./restart-services.sh"
-      - name: Notify Deployment
+          cat > user-data.sh << 'EOF'
+          #!/bin/bash
+
+          # ログファイルの設定
+          LOG_FILE="/var/log/openhands_setup.log"
+          exec > >(tee -a $LOG_FILE) 2>&1
+
+          echo "$(date): Starting OpenHands setup script"
+
+          # システムの更新とDockerのインストール
+          echo "$(date): Updating system and installing Docker"
+          apt-get update
+          apt-get install -y docker.io
+
+          # Dockerサービスの起動
+          echo "$(date): Starting Docker service"
+          systemctl start docker
+          systemctl enable docker
+
+          # OpenHandsの状態ディレクトリを作成
+          echo "$(date): Creating OpenHands state directory"
+          mkdir -p /home/ubuntu/.openhands-state
+          chown -R ubuntu:ubuntu /home/ubuntu/.openhands-state
+
+          # OpenHandsのDockerイメージを取得
+          echo "$(date): Pulling OpenHands Docker image"
+          docker pull docker.all-hands.dev/all-hands-ai/openhands:0.30
+
+          # ランタイムのDockerイメージを取得
+          echo "$(date): Pulling runtime Docker image"
+          docker pull docker.all-hands.dev/all-hands-ai/runtime:0.30-nikolaik
+
+          # OpenHandsコンテナの実行
+          echo "$(date): Running OpenHands container"
+          docker run -d --restart=always \
+            -e SANDBOX_RUNTIME_CONTAINER_IMAGE=docker.all-hands.dev/all-hands-ai/runtime:0.30-nikolaik \
+            -e LOG_ALL_EVENTS=true \
+            -e ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}" \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v /home/ubuntu/.openhands-state:/.openhands-state \
+            -p 3000:3000 \
+            --add-host host.docker.internal:host-gateway \
+            --name openhands-app \
+            docker.all-hands.dev/all-hands-ai/openhands:0.30
+
+          # Dockerコンテナの状態を確認
+          echo "$(date): Checking Docker container status"
+          docker ps
+
+          # セットアップ完了メッセージ
+          PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+          echo "$(date): Setup completed. Access at http://$PUBLIC_IP:3000"
+          echo "$(date): Log file is available at $LOG_FILE"
+          EOF
+
+      - name: Create or get security group
+        id: security_group
         run: |
-          echo "Deployed to Production Environment"
-          echo "URL: https://teai.io"
+          SG_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=OpenHands-SG-Prod" --query "SecurityGroups[0].GroupId" --output text)
+          
+          if [ "$SG_ID" == "None" ] || [ -z "$SG_ID" ]; then
+            echo "Creating security group 'OpenHands-SG-Prod'..."
+            SG_ID=$(aws ec2 create-security-group --group-name OpenHands-SG-Prod --description "Security group for OpenHands Production" --vpc-id $(aws ec2 describe-vpcs --query "Vpcs[0].VpcId" --output text) --output text)
+            
+            # SSHポートを開放
+            aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 22 --cidr 0.0.0.0/0
+            
+            # HTTPポートを開放
+            aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 80 --cidr 0.0.0.0/0
+            
+            # HTTPSポートを開放
+            aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 443 --cidr 0.0.0.0/0
+            
+            # OpenHandsポートを開放
+            aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 3000 --cidr 0.0.0.0/0
+            
+            # APIポートを開放
+            aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 5000 --cidr 0.0.0.0/0
+            aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 5001 --cidr 0.0.0.0/0
+            
+            # Webサーバーポートを開放
+            aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 8080 --cidr 0.0.0.0/0
+          else
+            echo "Using existing security group 'OpenHands-SG-Prod' ($SG_ID)."
+          fi
+          
+          echo "security_group_id=$SG_ID" >> $GITHUB_OUTPUT
+
+      - name: Create or get key pair
+        id: key_pair
+        run: |
+          KEY_NAME="OpenHands-Key-Prod"
+          
+          if ! aws ec2 describe-key-pairs --key-names $KEY_NAME > /dev/null 2>&1; then
+            echo "Creating key pair '$KEY_NAME'..."
+            mkdir -p ~/.ssh
+            aws ec2 create-key-pair --key-name $KEY_NAME --query "KeyMaterial" --output text > ~/.ssh/$KEY_NAME.pem
+            chmod 400 ~/.ssh/$KEY_NAME.pem
+            echo "key_created=true" >> $GITHUB_OUTPUT
+          else
+            echo "Key pair '$KEY_NAME' already exists."
+            echo "key_created=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "key_name=$KEY_NAME" >> $GITHUB_OUTPUT
+
+      - name: Check for existing production instance
+        id: check_instance
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=OpenHands-Production" "Name=instance-state-name,Values=running,stopped,pending,stopping" --query "Reservations[0].Instances[0].InstanceId" --output text)
+          
+          if [ "$INSTANCE_ID" != "None" ] && [ -n "$INSTANCE_ID" ]; then
+            echo "Found existing production instance: $INSTANCE_ID"
+            echo "instance_exists=true" >> $GITHUB_OUTPUT
+            echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+            
+            # インスタンスの状態を確認
+            INSTANCE_STATE=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query "Reservations[0].Instances[0].State.Name" --output text)
+            echo "instance_state=$INSTANCE_STATE" >> $GITHUB_OUTPUT
+            
+            if [ "$INSTANCE_STATE" == "stopped" ]; then
+              echo "Starting stopped instance..."
+              aws ec2 start-instances --instance-ids $INSTANCE_ID
+              aws ec2 wait instance-running --instance-ids $INSTANCE_ID
+            fi
+            
+            PUBLIC_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query "Reservations[0].Instances[0].PublicIpAddress" --output text)
+            echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+          else
+            echo "No existing production instance found."
+            echo "instance_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Launch new EC2 instance if needed
+        id: new_instance
+        if: steps.check_instance.outputs.instance_exists != 'true'
+        run: |
+          INSTANCE_ID=$(aws ec2 run-instances \
+            --image-id $(aws ec2 describe-images --owners amazon --filters "Name=name,Values=ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*" "Name=state,Values=available" --query "sort_by(Images, &CreationDate)[-1].ImageId" --output text) \
+            --instance-type t3.small \
+            --key-name ${{ steps.key_pair.outputs.key_name }} \
+            --security-group-ids ${{ steps.security_group.outputs.security_group_id }} \
+            --user-data file://user-data.sh \
+            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=OpenHands-Production}]" \
+            --query "Instances[0].InstanceId" \
+            --output text)
+          
+          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+          
+          echo "Waiting for instance to be running..."
+          aws ec2 wait instance-running --instance-ids $INSTANCE_ID
+          
+          PUBLIC_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query "Reservations[0].Instances[0].PublicIpAddress" --output text)
+          echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+
+      - name: Update existing instance
+        if: steps.check_instance.outputs.instance_exists == 'true'
+        run: |
+          # SSHキーの設定
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          
+          # SSHの設定
+          mkdir -p ~/.ssh
+          echo "Host *
+            StrictHostKeyChecking no
+            UserKnownHostsFile=/dev/null" > ~/.ssh/config
+          
+          # SSHで接続してDockerコンテナを再起動
+          ssh ubuntu@${{ steps.check_instance.outputs.public_ip }} "sudo docker stop openhands-app || true && sudo docker run -d --rm --pull=always -e SANDBOX_RUNTIME_CONTAINER_IMAGE=docker.all-hands.dev/all-hands-ai/runtime:0.30-nikolaik -e LOG_ALL_EVENTS=true -e ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} -v /var/run/docker.sock:/var/run/docker.sock -v /home/ubuntu/.openhands-state:/.openhands-state -p 3000:3000 --add-host host.docker.internal:host-gateway --name openhands-app docker.all-hands.dev/all-hands-ai/openhands:0.30"
+
+      - name: Output instance info
+        run: |
+          if [ "${{ steps.check_instance.outputs.instance_exists }}" == "true" ]; then
+            INSTANCE_ID="${{ steps.check_instance.outputs.instance_id }}"
+            PUBLIC_IP="${{ steps.check_instance.outputs.public_ip }}"
+          else
+            INSTANCE_ID="${{ steps.new_instance.outputs.instance_id }}"
+            PUBLIC_IP="${{ steps.new_instance.outputs.public_ip }}"
+          fi
+          
+          echo "OpenHands has been deployed to production!"
+          echo "Instance ID: $INSTANCE_ID"
+          echo "Public IP: $PUBLIC_IP"
+          echo "OpenHands URL: http://$PUBLIC_IP:3000"
+          
+          # Slackに通知を送信（オプション）
+          if [ -n "${{ secrets.SLACK_WEBHOOK_URL }}" ]; then
+            curl -X POST -H 'Content-type: application/json' --data "{\"text\":\"🚀 OpenHands has been deployed to production!\nURL: http://$PUBLIC_IP:3000\"}" ${{ secrets.SLACK_WEBHOOK_URL }}
+          fi
