@@ -1,0 +1,25 @@
+{
+  "environments": {
+    "dev": {
+      "server_ip": "35.78.114.51",
+      "ssh_user": "ubuntu",
+      "ssh_key_path": "/path/to/dev-ssh-key.pem",
+      "app_path": "~/openhands-ec2-manager",
+      "domain": "dev.teai.io"
+    },
+    "staging": {
+      "server_ip": "staging-server-ip",
+      "ssh_user": "ubuntu",
+      "ssh_key_path": "/path/to/staging-ssh-key.pem",
+      "app_path": "~/openhands-ec2-manager",
+      "domain": "staging.teai.io"
+    },
+    "production": {
+      "server_ip": "production-server-ip",
+      "ssh_user": "ubuntu",
+      "ssh_key_path": "/path/to/prod-ssh-key.pem",
+      "app_path": "~/openhands-ec2-manager",
+      "domain": "teai.io"
+    }
+  }
+}
