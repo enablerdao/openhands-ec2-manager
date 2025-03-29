@@ -2,63 +2,57 @@ name: Deploy OpenHands EC2 Manager
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    branches:
+      - main
+      - master
+      - add-github-actions-integration
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      
-      - name: Set up Node.js
-        uses: actions/setup-node@v2
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
         with:
           node-version: '18'
-          
-      - name: Install dependencies for client
+          cache: 'npm'
+
+      - name: Install dependencies
         run: |
-          cd client
-          npm install
-          
+          npm ci || npm install
+          cd client && (npm ci || npm install)
+          cd ../server && (npm ci || npm install)
+
       - name: Build client
         run: |
           cd client
           npm run build
-          
-      - name: Deploy to production
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+      - name: Build server
+        run: |
+          cd server
+          npm run build
+
+      - name: Deploy to manager server
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ secrets.PROD_HOST }}
-          username: ubuntu
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ secrets.MANAGER_HOST }}
+          username: ${{ secrets.MANAGER_USERNAME }}
+          key: ${{ secrets.MANAGER_SSH_KEY }}
           script: |
-            # Update frontend
-            sudo rm -rf /var/www/manager/*
-            sudo mkdir -p /var/www/manager
-            
-            # Copy new build
-            sudo cp -r /home/ubuntu/deploy/client/build/* /var/www/manager/
-            
-            # Restart API server
-            sudo systemctl restart openhands-api
-            
-      - name: Deploy to staging
-        if: github.event_name == 'pull_request'
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.STAGING_HOST }}
-          username: ubuntu
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            # Update frontend
-            sudo rm -rf /var/www/manager/*
-            sudo mkdir -p /var/www/manager
-            
-            # Copy new build
-            sudo cp -r /home/ubuntu/deploy/client/build/* /var/www/manager/
-            
-            # Restart API server
-            sudo systemctl restart openhands-api
+            cd /home/ubuntu/openhands-ec2-manager
+            git pull
+            cd client
+            git pull
+            npm ci || npm install
+            npm run build
+            cd ../server
+            npm ci || npm install
+            npm run build
+            pm2 restart openhands-ec2-manager || pm2 start dist/index.js --name openhands-ec2-manager
