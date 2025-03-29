@@ -27,16 +27,6 @@ jobs:
           cd client
           npm run build
           
-      - name: Install dependencies for server
-        run: |
-          cd server
-          npm install
-          
-      - name: Build server
-        run: |
-          cd server
-          npm run build || echo "Build failed but continuing..."
-          
       - name: Deploy to production
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: appleboy/ssh-action@master
@@ -46,15 +36,14 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             # Update frontend
-            rm -rf /var/www/manager/*
-            mkdir -p /var/www/manager
+            sudo rm -rf /var/www/manager/*
+            sudo mkdir -p /var/www/manager
             
             # Copy new build
-            cp -r /home/ubuntu/deploy/client/build/* /var/www/manager/
+            sudo cp -r /home/ubuntu/deploy/client/build/* /var/www/manager/
             
-            # Restart server
-            cd /home/ubuntu/simple-server
-            pm2 restart openhands-manager-api || node server.js > server.log 2>&1 &
+            # Restart API server
+            sudo systemctl restart openhands-api
             
       - name: Deploy to staging
         if: github.event_name == 'pull_request'
@@ -65,12 +54,11 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             # Update frontend
-            rm -rf /var/www/manager/*
-            mkdir -p /var/www/manager
+            sudo rm -rf /var/www/manager/*
+            sudo mkdir -p /var/www/manager
             
             # Copy new build
-            cp -r /home/ubuntu/deploy/client/build/* /var/www/manager/
+            sudo cp -r /home/ubuntu/deploy/client/build/* /var/www/manager/
             
-            # Restart server
-            cd /home/ubuntu/simple-server
-            pm2 restart openhands-manager-api || node server.js > server.log 2>&1 &
+            # Restart API server
+            sudo systemctl restart openhands-api
